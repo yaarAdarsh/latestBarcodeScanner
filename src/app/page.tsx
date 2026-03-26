@@ -275,7 +275,7 @@ export default function Home() {
       )}
 
       {scanning && (
-        <div className="relative w-full h-[140px] overflow-hidden rounded border bg-black">
+        <div className="relative w-full h-[240px] overflow-hidden rounded border bg-black">
           <video
             ref={videoRef}
             className="absolute inset-0 w-full h-full object-cover"
