@@ -166,10 +166,10 @@
 //   );
 // }
 
-
 "use client";
 
 import { BrowserMultiFormatReader, IScannerControls } from "@zxing/browser";
+import { BarcodeFormat, DecodeHintType } from "@zxing/library";
 import { useEffect, useRef, useState } from "react";
 
 export default function Home() {
@@ -183,12 +183,36 @@ export default function Home() {
   const [scanning, setScanning] = useState(false);
 
   useEffect(() => {
-    readerRef.current = new BrowserMultiFormatReader();
+    const hints = new Map();
+
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+      BarcodeFormat.CODE_128,
+      BarcodeFormat.CODE_39,
+      BarcodeFormat.QR_CODE,
+    ]);
+
+    hints.set(DecodeHintType.TRY_HARDER, true);
+
+    readerRef.current = new BrowserMultiFormatReader(hints, {
+      delayBetweenScanAttempts: 200,
+      delayBetweenScanSuccess: 1000,
+    });
 
     return () => {
       controlsRef.current?.stop();
     };
   }, []);
+
+  // useEffect(() => {
+  //   readerRef.current = new BrowserMultiFormatReader();
+
+  //   return () => {
+  //     controlsRef.current?.stop();
+  //   };
+  // }, []);
+
+  let lastScanTime = 0;
+  let lastScannedValue = "";
 
   const startScanning = async () => {
     if (scanning) return;
@@ -204,10 +228,13 @@ export default function Home() {
       try {
         const devices = await BrowserMultiFormatReader.listVideoInputDevices();
         const backCamera =
-          devices.find((d) => /back|rear|environment/i.test(d.label)) ||
-          devices[0];
+          devices.find(
+            (d) =>
+              d.label.toLowerCase().includes("back") ||
+              d.label.toLowerCase().includes("rear"),
+          ) || devices[0];
 
-        readerRef.current = new BrowserMultiFormatReader();
+        // readerRef.current = new BrowserMultiFormatReader();
 
         controlsRef.current = await readerRef.current!.decodeFromVideoDevice(
           backCamera.deviceId,
@@ -259,6 +286,9 @@ export default function Home() {
             playsInline
           />
 
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="w-[80%] h-[60px] border-2 border-green-400 rounded-md" />
+          </div>
           {/* Scan guide line */}
           <div className="absolute inset-x-0 top-1/2 h-[2px] bg-red-500 animate-pulse" />
         </div>
@@ -268,6 +298,3 @@ export default function Home() {
     </div>
   );
 }
-
-
-
