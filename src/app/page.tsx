@@ -211,8 +211,6 @@ export default function Home() {
   //   };
   // }, []);
 
-  let lastScanTime = 0;
-  let lastScannedValue = "";
 
   const startScanning = async () => {
     if (scanning) return;
