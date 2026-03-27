@@ -176,6 +176,7 @@ export default function Home() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
+  const scanIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const hasScannedRef = useRef(false);
 
@@ -211,6 +212,80 @@ export default function Home() {
   //   };
   // }, []);
 
+  const scanFrame = () => {
+    if (!videoRef.current) return null;
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d")!;
+    const width = 320;
+    const height = 100;
+    canvas.width = width;
+    canvas.height = height;
+    ctx.drawImage(
+      videoRef.current,
+      videoRef.current.videoWidth / 2 - width / 2,
+      videoRef.current.videoHeight / 2 - height / 2,
+      width,
+      height,
+      0,
+      0,
+      width,
+      height,
+    );
+
+    // 🔥 ADD GRAYSCALE HERE
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+      data[i] = data[i + 1] = data[i + 2] = avg;
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
+  };
+
+  // const startScanning = async () => {
+  //   if (scanning) return;
+
+  //   setScanning(true);
+  //   setResult("");
+  //   hasScannedRef.current = false;
+
+  //   // wait for <video> to be mounted
+  //   setTimeout(async () => {
+  //     if (!videoRef.current) return;
+
+  //     try {
+  //       const devices = await BrowserMultiFormatReader.listVideoInputDevices();
+  //       const backCamera =
+  //         devices.find(
+  //           (d) =>
+  //             d.label.toLowerCase().includes("back") ||
+  //             d.label.toLowerCase().includes("rear"),
+  //         ) || devices[0];
+
+  //       // readerRef.current = new BrowserMultiFormatReader();
+
+  //       controlsRef.current = await readerRef.current!.decodeFromVideoDevice(
+  //         backCamera.deviceId,
+  //         videoRef.current,
+  //         (result) => {
+  //           if (!result || hasScannedRef.current) return;
+
+  //           hasScannedRef.current = true;
+  //           const decodedText = result.getText();
+
+  //           setResult(decodedText);
+  //           stopScanning();
+  //         },
+  //       );
+  //     } catch (err) {
+  //       console.error("Camera error:", err);
+  //       setScanning(false);
+  //     }
+  //   }, 0);
+  // };
 
   const startScanning = async () => {
     if (scanning) return;
@@ -219,44 +294,71 @@ export default function Home() {
     setResult("");
     hasScannedRef.current = false;
 
-    // wait for <video> to be mounted
-    setTimeout(async () => {
-      if (!videoRef.current) return;
+    try {
+      const devices = await BrowserMultiFormatReader.listVideoInputDevices();
 
-      try {
-        const devices = await BrowserMultiFormatReader.listVideoInputDevices();
-        const backCamera =
-          devices.find(
-            (d) =>
-              d.label.toLowerCase().includes("back") ||
-              d.label.toLowerCase().includes("rear"),
-          ) || devices[0];
+      const backCamera =
+        devices.find(
+          (d) =>
+            d.label.toLowerCase().includes("back") ||
+            d.label.toLowerCase().includes("rear"),
+        ) || devices[0];
 
-        // readerRef.current = new BrowserMultiFormatReader();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          deviceId: backCamera.deviceId,
+          facingMode: "environment",
+        },
+      });
 
-        controlsRef.current = await readerRef.current!.decodeFromVideoDevice(
-          backCamera.deviceId,
-          videoRef.current,
-          (result) => {
-            if (!result || hasScannedRef.current) return;
-
-            hasScannedRef.current = true;
-            const decodedText = result.getText();
-
-            setResult(decodedText);
-            stopScanning();
-          },
-        );
-      } catch (err) {
-        console.error("Camera error:", err);
-        setScanning(false);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
       }
-    }, 0);
+
+      // 🔥 ROI SCAN LOOP
+      scanIntervalRef.current = setInterval(async () => {
+        if (!readerRef.current || hasScannedRef.current) return;
+
+        const canvas = scanFrame();
+        if (!canvas) return;
+
+        try {
+          const result = await readerRef.current.decodeFromCanvas(canvas);
+
+          if (result) {
+            hasScannedRef.current = true;
+
+            const text = result.getText();
+            setResult(text);
+
+            stopScanning();
+          }
+        } catch (err) {
+          // ignore "not found" errors (normal during scanning)
+        }
+      }, 150); // 🔥 scan every 150ms
+    } catch (err) {
+      console.error("Camera error:", err);
+      setScanning(false);
+    }
   };
 
+  // const stopScanning = () => {
+  //   controlsRef.current?.stop();
+  //   controlsRef.current = null;
+  //   setScanning(false);
+  // };
+
   const stopScanning = () => {
-    controlsRef.current?.stop();
-    controlsRef.current = null;
+    scanIntervalRef.current && clearInterval(scanIntervalRef.current);
+
+    if (videoRef.current?.srcObject) {
+      const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
+      tracks.forEach((track) => track.stop());
+      videoRef.current.srcObject = null;
+    }
+
     setScanning(false);
   };
 
@@ -275,7 +377,7 @@ export default function Home() {
       )}
 
       {scanning && (
-        <div className="relative w-full h-[240px] overflow-hidden rounded border bg-black">
+        <div className="relative w-full h-[140px] overflow-hidden rounded border bg-black">
           <video
             ref={videoRef}
             className="absolute inset-0 w-full h-full object-cover"
